@@ -33,3 +33,15 @@ with Ethtool() as ethtool:
 
     print(ethtool.fetch_link_status(iface_name=iface_name))
     print('')
+
+    print(ethtool.fetch_if_flags(iface_name=iface_name).flags)
+    print('')
+
+    print(ethtool.fetch_mtu(iface_name=iface_name))
+    print('')
+
+    print(ethtool.fetch_hardware_address(iface_name=iface_name))
+    print('')
+
+    print(ethtool.fetch_ip_address(iface_name=iface_name))
+    print('')

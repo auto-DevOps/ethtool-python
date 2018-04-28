@@ -14,6 +14,7 @@ Changelog:
 '''
 
 import ctypes
+import platform
 import struct
 
 from collections import (
@@ -27,12 +28,42 @@ from socket import (
     SOCK_DGRAM,
     IPPROTO_IP,
     socket,
+    inet_ntoa,
+)
+
+from .flags import (
+    IFF,
 )
 
 PF_INET = AF_INET
 
 
+def mac_ntoa(n):
+    '''
+        Convert binary MAC address to readable format.
+
+        Arguments
+            n: binary format, must be bytes type of size 6.
+
+        Returns
+            A str type which is the readable format, like '08:00:27:c8:04:83'.
+    '''
+
+    python_version = platform.python_version_tuple()[0]
+
+    if python_version == '3':
+        return '%02x:%02x:%02x:%02x:%02x:%02x' % tuple(n)
+
+    return '%02x:%02x:%02x:%02x:%02x:%02x' % tuple(map(ord, n))
+
+
 class Ethtool(object):
+
+    SIOCGIFFLAGS = 0x8913
+    SIOCSIFFLAGS = 0x8914
+
+    SIOCGIFMTU = 0x8921
+    SIOCGIFADDR = 0x8915
 
     SIOCGIFHWADDR = 0x8927
     SIOCETHTOOL = 0x8946
@@ -117,10 +148,51 @@ class Ethtool(object):
     ETHTOOL_CMD_ONLY_STRUCT = struct.Struct('I')
 
     IFREQ_STRUCT = struct.Struct('16s')
+    IFREQ_MTU_STRUCT = struct.Struct('16si')
     IFREQ_SIOCETHTOOL_STRUCT = struct.Struct('16sP')
+    IFREQ_FLAGS_STRUCT = struct.Struct('16sH')
 
     def __init__(self):
         self.s = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP)
+
+    def fetch_if_flags(self, iface_name):
+        ifreq = self.IFREQ_FLAGS_STRUCT.pack(iface_name, 0)
+        ifreq = ioctl(self.s.fileno(), self.SIOCGIFFLAGS, ifreq)
+        _, flags = self.IFREQ_FLAGS_STRUCT.unpack(ifreq)
+        return IFF(bits=flags)
+
+    def fetch_mtu(self, iface_name):
+        ifreq = self.IFREQ_MTU_STRUCT.pack(iface_name, 0)
+        ifreq = ioctl(self.s.fileno(), self.SIOCGIFMTU, ifreq)
+        _, mtu = self.IFREQ_MTU_STRUCT.unpack(ifreq)
+        return mtu
+
+    def fetch_hardware_address(self, iface_name, readable=True):
+        s = self.s
+        if not s:
+            return
+
+        sfd = s.fileno()
+
+        buffer_in = struct.pack('64s', iface_name.encode('utf8'))
+        buffer_out = ioctl(sfd, self.SIOCGIFHWADDR, buffer_in)
+
+        mac = buffer_out[18:24]
+
+        if readable:
+            mac = mac_ntoa(mac)
+
+        return mac
+
+    def fetch_ip_address(self, iface_name, readable=True):
+        ifreq = struct.pack('64s', iface_name.encode('utf8'))
+        ifreq = ioctl(self.s.fileno(), self.SIOCGIFADDR, ifreq)
+        ip = ifreq[20:24]
+
+        if readable:
+            ip = inet_ntoa(ip)
+
+        return ip
 
     def execute_ethtool_cmd(self, iface_name, cmd):
         encode_handler = getattr(iface_name, 'encode', None)
